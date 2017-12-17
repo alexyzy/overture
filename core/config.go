@@ -107,22 +107,27 @@ func (c *Config) getDomainList() {
 	}
 	defer f.Close()
 
+	// Based on: https://stackoverflow.com/a/17871737/2245107
+	subnetTester := regexp.MustCompile(`^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3,3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/(3[0-2]|[12]?[0-9]))?|(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))(/(12[0-8]|1[01][0-9]|[1-9]?[0-9]))?)$`)
+
 	var inProxyList = true
 
 	s := bufio.NewScanner(f)
 	for s.Scan() {
 		line := s.Text()
-		if line == "[proxy_list]" {
-			inProxyList = true
-		}
-		if line == "[bypass_list]" {
-			inProxyList = false
-		}
-		if inProxyList {
-			re, err := regexp.Compile(line)
-			if err == nil {
-				dl = append(dl, re)
-			}
+		switch line {
+			case "[outbound_block_list]", "[black_list]", "[bypass_list]":
+				inProxyList = false
+			case "[white_list]", "[proxy_list]":
+				inProxyList = true
+			case "[reject_all]", "[bypass_all]", "[accept_all]", "[proxy_all]":
+			default:
+				if inProxyList && !subnetTester.MatchString(line) {
+					re, err := regexp.Compile(line)
+					if err == nil {
+						dl = append(dl, re)
+					}
+				}
 		}
 	}
 
