@@ -100,18 +100,29 @@ func (c *Config) getDomainList() {
 
 	var dl []*regexp.Regexp
 
-	f, err := ioutil.ReadFile(c.DomainFile)
+	f, err := os.Open(c.DomainFile)
 	if err != nil {
 		log.Error("Open Custom domain file failed: ", err)
 		return
 	}
+	defer f.Close()
 
-	re := regexp.MustCompile(`(\^.+\$)`)
-	acl := re.FindAllString(string(f), -1)
-	for _, item := range acl {
-		re, err := regexp.Compile(item)
-		if err == nil {
-			dl = append(dl, re)
+	var inProxyList = true
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		line := s.Text()
+		if line == "[proxy_list]" {
+			inProxyList = true
+		}
+		if line == "[bypass_list]" {
+			inProxyList = false
+		}
+		if inProxyList {
+			re, err := regexp.Compile(line)
+			if err == nil {
+				dl = append(dl, re)
+			}
 		}
 	}
 
