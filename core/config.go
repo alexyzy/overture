@@ -12,6 +12,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/shadowsocks/overture/core/cache"
@@ -116,18 +117,18 @@ func (c *Config) getDomainList() {
 	for s.Scan() {
 		line := s.Text()
 		switch line {
-			case "[outbound_block_list]", "[black_list]", "[bypass_list]":
-				inProxyList = false
-			case "[white_list]", "[proxy_list]":
-				inProxyList = true
-			case "[reject_all]", "[bypass_all]", "[accept_all]", "[proxy_all]":
-			default:
-				if inProxyList && !subnetTester.MatchString(line) {
-					re, err := regexp.Compile(line)
-					if err == nil {
-						dl = append(dl, re)
-					}
+		case "[outbound_block_list]", "[black_list]", "[bypass_list]":
+			inProxyList = false
+		case "[white_list]", "[proxy_list]":
+			inProxyList = true
+		case "[reject_all]", "[bypass_all]", "[accept_all]", "[proxy_all]":
+		default:
+			if inProxyList && len(line) > 0 && !strings.HasPrefix(line, "#") && !subnetTester.MatchString(line) {
+				re, err := regexp.Compile(line)
+				if err == nil {
+					dl = append(dl, re)
 				}
+			}
 		}
 	}
 

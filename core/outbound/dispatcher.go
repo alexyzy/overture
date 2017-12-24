@@ -58,7 +58,7 @@ func (d *Dispatcher) ExchangeForDomain() bool {
 	for _, re := range d.AclList {
 
 		if re.MatchString(qn) {
-			log.Debug("Matched: Custom domain " + qn)
+			log.Debug("Matched: Custom domain " + qn + " with " + re.String())
 			d.ClientBundle.UpdateFromDNSUpstream(d.AlternativeDNS)
 			d.ClientBundle.ExchangeFromRemote(true, true)
 			log.Debug("Finally use alternative DNS")
