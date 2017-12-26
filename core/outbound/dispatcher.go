@@ -7,43 +7,65 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/miekg/dns"
 	"github.com/shadowsocks/overture/core/common"
+	"github.com/shadowsocks/overture/core/cache"
+	"github.com/shadowsocks/overture/core/hosts"
 )
 
 type Dispatcher struct {
-	PrimaryDNS     []*DNSUpstream
-	AlternativeDNS []*DNSUpstream
+	QuestionMessage *dns.Msg
+
+	PrimaryDNS     []*common.DNSUpstream
+	AlternativeDNS []*common.DNSUpstream
 	OnlyPrimaryDNS bool
 
-	ClientBundle       *ClientBundle
+	PrimaryClientBundle     *ClientBundle
+	AlternativeClientBundle *ClientBundle
+	ActiveClientBundle      *ClientBundle
+
 	IPNetworkList      []*net.IPNet
 	AclList            []*regexp.Regexp
 	RedirectIPv6Record bool
+
+	InboundIP string
+
+	Hosts *hosts.Hosts
+	Cache *cache.Cache
 }
 
 func (d *Dispatcher) Exchange() {
 
-	if ok := d.ClientBundle.ExchangeFromLocal(); ok {
-		return
+	d.PrimaryClientBundle = NewClientBundle(d.QuestionMessage, d.PrimaryDNS, d.InboundIP, d.Hosts, d.Cache)
+	d.AlternativeClientBundle = NewClientBundle(d.QuestionMessage, d.AlternativeDNS, d.InboundIP, d.Hosts, d.Cache)
+
+	for _, cb := range [2]*ClientBundle{d.PrimaryClientBundle, d.AlternativeClientBundle} {
+		if ok := cb.ExchangeFromLocal(); ok {
+			d.ActiveClientBundle = cb
+			return
+		}
 	}
 
 	if d.OnlyPrimaryDNS {
-		d.ClientBundle.ExchangeFromRemote(true, true)
+		d.ActiveClientBundle = d.PrimaryClientBundle
+		d.ActiveClientBundle.ExchangeFromRemote(true, true)
 		return
 	}
 
 	if ok := d.ExchangeForIPv6() || d.ExchangeForDomain(); ok {
+		d.AlternativeClientBundle.ExchangeFromRemote(true, true)
 		return
 	}
 
-	d.ClientBundle.ExchangeFromRemote(false, true)
-	d.ExchangeForPrimaryDNSResponse()
+	d.ChooseActiveClientBundle()
+	if d.ActiveClientBundle == d.AlternativeClientBundle {
+		d.ActiveClientBundle.ExchangeFromRemote(false, true)
+	}
+	d.ActiveClientBundle.CacheResult()
 }
 
 func (d *Dispatcher) ExchangeForIPv6() bool {
 
-	if (d.ClientBundle.QuestionMessage.Question[0].Qtype == dns.TypeAAAA) && d.RedirectIPv6Record {
-		d.ClientBundle.UpdateFromDNSUpstream(d.AlternativeDNS)
-		d.ClientBundle.ExchangeFromRemote(true, true)
+	if (d.PrimaryClientBundle.QuestionMessage.Question[0].Qtype == dns.TypeAAAA) && d.RedirectIPv6Record {
+		d.ActiveClientBundle = d.AlternativeClientBundle
 		log.Debug("Finally use alternative DNS")
 		return true
 	}
@@ -53,14 +75,13 @@ func (d *Dispatcher) ExchangeForIPv6() bool {
 
 func (d *Dispatcher) ExchangeForDomain() bool {
 
-	qn := d.ClientBundle.QuestionMessage.Question[0].Name[:len(d.ClientBundle.QuestionMessage.Question[0].Name)-1]
+	qn := d.PrimaryClientBundle.QuestionMessage.Question[0].Name[:len(d.PrimaryClientBundle.QuestionMessage.Question[0].Name)-1]
 
 	for _, re := range d.AclList {
 
 		if re.MatchString(qn) {
 			log.Debug("Matched: Custom domain " + qn + " with " + re.String())
-			d.ClientBundle.UpdateFromDNSUpstream(d.AlternativeDNS)
-			d.ClientBundle.ExchangeFromRemote(true, true)
+			d.ActiveClientBundle = d.AlternativeClientBundle
 			log.Debug("Finally use alternative DNS")
 			return true
 		}
@@ -71,16 +92,18 @@ func (d *Dispatcher) ExchangeForDomain() bool {
 	return false
 }
 
-func (d *Dispatcher) ExchangeForPrimaryDNSResponse() {
+func (d *Dispatcher) ChooseActiveClientBundle() {
 
-	if d.ClientBundle.ResponseMessage == nil || len(d.ClientBundle.ResponseMessage.Answer) == 0 {
-		log.Debug("Primary DNS answer is empty, finally use alternative DNS")
-		d.ClientBundle.UpdateFromDNSUpstream(d.AlternativeDNS)
-		d.ClientBundle.ExchangeFromRemote(true, true)
+	d.ActiveClientBundle = d.PrimaryClientBundle
+	d.PrimaryClientBundle.ExchangeFromRemote(false, true)
+
+	if d.PrimaryClientBundle.ResponseMessage == nil || !common.HasAnswer(d.PrimaryClientBundle.ResponseMessage) {
+		//log.Debug("Primary DNS answer is empty, finally use alternative DNS")
+		//d.ActiveClientBundle = d.AlternativeClientBundle
 		return
 	}
 
-	for _, a := range d.ClientBundle.ResponseMessage.Answer {
+	for _, a := range d.PrimaryClientBundle.ResponseMessage.Answer {
 		if a.Header().Rrtype == dns.TypeA {
 			log.Debug("Try to match response ip address with IP network")
 			if common.IsIPMatchList(net.ParseIP(a.(*dns.A).A.String()), d.IPNetworkList, true) {
@@ -96,14 +119,10 @@ func (d *Dispatcher) ExchangeForPrimaryDNSResponse() {
 		}
 
 		log.Debug("IP network match fail, finally use alternative DNS")
-		d.ClientBundle.UpdateFromDNSUpstream(d.AlternativeDNS)
-		d.ClientBundle.ExchangeFromRemote(true, true)
+		d.ActiveClientBundle = d.AlternativeClientBundle
 		return
 	}
 
-	go func() {
-		d.ClientBundle.ExchangeFromRemote(true, false)
-	}()
-
 	log.Debug("Finally use primary DNS")
+	d.ActiveClientBundle = d.PrimaryClientBundle
 }

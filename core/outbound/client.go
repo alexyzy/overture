@@ -18,20 +18,19 @@ type Client struct {
 	ResponseMessage *dns.Msg
 	QuestionMessage *dns.Msg
 
-	DNSUpstream           *DNSUpstream
-	EDNSClientSubnetIP    string
-	InboundIP             string
-	ReservedIPNetworkList []*net.IPNet
+	DNSUpstream        *common.DNSUpstream
+	EDNSClientSubnetIP string
+	InboundIP          string
 
 	Hosts *hosts.Hosts
 	Cache *cache.Cache
 }
 
-func NewClient(q *dns.Msg, u *DNSUpstream, ip string, h *hosts.Hosts, cache *cache.Cache) *Client {
+func NewClient(q *dns.Msg, u *common.DNSUpstream, ip string, h *hosts.Hosts, cache *cache.Cache) *Client {
 
-	c := &Client{QuestionMessage: q, DNSUpstream: u, InboundIP: ip, Hosts: h, Cache: cache}
+	c := &Client{QuestionMessage: q.Copy(), DNSUpstream: u, InboundIP: ip, Hosts: h, Cache: cache}
+
 	c.getEDNSClientSubnetIP()
-	c.ReservedIPNetworkList = getReservedIPNetworkList()
 	return c
 }
 
@@ -39,7 +38,7 @@ func (c *Client) getEDNSClientSubnetIP() {
 
 	switch c.DNSUpstream.EDNSClientSubnet.Policy {
 	case "auto":
-		if !common.IsIPMatchList(net.ParseIP(c.InboundIP), c.ReservedIPNetworkList, false) {
+		if !common.IsIPMatchList(net.ParseIP(c.InboundIP), common.ReservedIPNetworkList, false) {
 			c.EDNSClientSubnetIP = c.InboundIP
 		} else {
 			c.EDNSClientSubnetIP = c.DNSUpstream.EDNSClientSubnet.ExternalIP
@@ -50,11 +49,8 @@ func (c *Client) getEDNSClientSubnetIP() {
 
 func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 
-	if c.ExchangeFromCache(isLog) {
-		return
-	}
-
-	setEDNSClientSubnet(c.QuestionMessage, c.EDNSClientSubnetIP)
+	common.SetEDNSClientSubnet(c.QuestionMessage, c.EDNSClientSubnetIP)
+	c.EDNSClientSubnetIP = common.GetEDNSClientSubnetIP(c.QuestionMessage)
 
 	var conn net.Conn
 	if c.DNSUpstream.SOCKS5Address != "" {
@@ -104,16 +100,26 @@ func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 
 	c.ResponseMessage = temp
 
-	if isCache && c.Cache != nil {
-		c.Cache.InsertMessage(cache.Key(c.QuestionMessage.Question[0], c.EDNSClientSubnetIP), c.ResponseMessage)
-	}
+	//for i := 0;i < len(c.ResponseMessage.Answer); i++{
+	//	if c.ResponseMessage.Answer[i].Header().Rrtype == dns.TypeA || c.ResponseMessage.Answer[i].Header().Rrtype == dns.TypeAAAA{
+	//		c.ResponseMessage.Answer[i].Header().Name = c.QuestionMessage.Question[0].Name
+	//	}
+	//	if c.ResponseMessage.Answer[i].Header().Rrtype == dns.TypeCNAME{
+	//		c.ResponseMessage.Answer = c.ResponseMessage.Answer[:i+copy(c.ResponseMessage.Answer[i:], c.ResponseMessage.Answer[i+1:])]
+	//		i -= 1
+	//	}
+	//}
 
 	if isLog {
-		c.logAnswer(false)
+		c.logAnswer("")
+	}
+
+	if isCache {
+		c.CacheResult()
 	}
 }
 
-func (c *Client) ExchangeFromCache(isLog bool) bool {
+func (c *Client) ExchangeFromCache() bool {
 
 	if c.Cache == nil {
 		return false
@@ -121,11 +127,8 @@ func (c *Client) ExchangeFromCache(isLog bool) bool {
 
 	m := c.Cache.Hit(cache.Key(c.QuestionMessage.Question[0], c.EDNSClientSubnetIP), c.QuestionMessage.Id)
 	if m != nil {
-		log.Debug(c.DNSUpstream.Name + " Hit: " + cache.Key(c.QuestionMessage.Question[0], c.EDNSClientSubnetIP))
+		log.Debug("Cache Hit: " + cache.Key(c.QuestionMessage.Question[0], c.EDNSClientSubnetIP))
 		c.ResponseMessage = m
-		if isLog {
-			c.logAnswer(false)
-		}
 		return true
 	}
 
@@ -133,6 +136,11 @@ func (c *Client) ExchangeFromCache(isLog bool) bool {
 }
 
 func (c *Client) ExchangeFromLocal() bool {
+
+	if c.ExchangeFromCache() {
+		return true
+	}
+
 	raw_name := c.QuestionMessage.Question[0].Name
 
 	if c.ExchangeFromHosts(raw_name) || c.ExchangeFromIP(raw_name) {
@@ -205,6 +213,7 @@ func (c *Client) setLocalResponseMessage(rrl []dns.RR) {
 			rrl[i], rrl[j] = rrl[j], rrl[i]
 		}
 	}
+
 	c.ResponseMessage = new(dns.Msg)
 	for _, rr := range rrl {
 		c.ResponseMessage.Answer = append(c.ResponseMessage.Answer, rr)
@@ -214,29 +223,22 @@ func (c *Client) setLocalResponseMessage(rrl []dns.RR) {
 	c.ResponseMessage.RecursionAvailable = true
 }
 
-func (c *Client) logAnswer(isLocal bool) {
+func (c *Client) logAnswer(indicator string) {
 
 	for _, a := range c.ResponseMessage.Answer {
 		var name string
-		if isLocal {
-			name = "Local"
+		if indicator != "" {
+			name = indicator
 		} else {
 			name = c.DNSUpstream.Name
 		}
-		log.Debug(name + " Answer: " + a.String())
+		log.Debug("Answer from " + name + ": " + a.String())
 	}
 }
 
-func getReservedIPNetworkList() []*net.IPNet {
+func (c *Client) CacheResult() {
 
-	ipnl := make([]*net.IPNet, 0)
-	localCIDR := []string{"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"}
-	for _, c := range localCIDR {
-		_, ip_net, err := net.ParseCIDR(c)
-		if err != nil {
-			break
-		}
-		ipnl = append(ipnl, ip_net)
+	if c.Cache != nil {
+		c.Cache.InsertMessage(cache.Key(c.QuestionMessage.Question[0], common.GetEDNSClientSubnetIP(c.QuestionMessage)), c.ResponseMessage)
 	}
-	return ipnl
 }

@@ -122,7 +122,7 @@ func main() {
 	)
 
 	flag.StringVar(&configPath, "c", "./config.json", "config file path")
-	flag.StringVar(&logPath, "l", "./overture.log", "log file path")
+	flag.StringVar(&logPath, "l", "", "log file path")
 	flag.BoolVar(&isLogVerbose, "v", false, "verbose mode")
 	flag.IntVar(&processorNumber, "p", runtime.NumCPU(), "number of processor to use")
 	flag.BoolVar(&vpn, "V", false, "VPN mode")

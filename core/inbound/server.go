@@ -8,21 +8,16 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/miekg/dns"
-	"github.com/shadowsocks/overture/core/cache"
-	"github.com/shadowsocks/overture/core/hosts"
 	"github.com/shadowsocks/overture/core/outbound"
 )
 
 type Server struct {
 	BindAddress string
 
-	Dispatcher *outbound.Dispatcher
+	Dispatcher outbound.Dispatcher
 
 	MinimumTTL  int
 	RejectQtype []uint16
-
-	Hosts *hosts.Hosts
-	Cache *cache.Cache
 }
 
 func (s *Server) Run() {
@@ -51,10 +46,10 @@ func (s *Server) Run() {
 func (s *Server) ServeDNS(w dns.ResponseWriter, q *dns.Msg) {
 
 	inboundIP, _, _ := net.SplitHostPort(w.RemoteAddr().String())
-	cb := outbound.NewClientBundle(q, s.Dispatcher.PrimaryDNS, inboundIP, s.Hosts, s.Cache)
-	s.Dispatcher.ClientBundle = cb
+	s.Dispatcher.InboundIP = inboundIP
+	s.Dispatcher.QuestionMessage = q
 
-	log.Debug("Question: " + cb.QuestionMessage.Question[0].String())
+	log.Debug("Question from " +inboundIP + ": " + q.Question[0].String())
 
 	for _, qt := range s.RejectQtype {
 		if isQuestionType(q, qt) {
@@ -62,7 +57,11 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, q *dns.Msg) {
 		}
 	}
 
-	s.Dispatcher.Exchange()
+	d := s.Dispatcher
+
+	d.Exchange()
+
+	cb := d.ActiveClientBundle
 
 	if cb.ResponseMessage != nil {
 		if s.MinimumTTL > 0 {

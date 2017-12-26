@@ -6,6 +6,7 @@
 package core
 
 import (
+	"github.com/shadowsocks/overture/core/config"
 	"github.com/shadowsocks/overture/core/inbound"
 	"github.com/shadowsocks/overture/core/outbound"
 )
@@ -13,16 +14,18 @@ import (
 // Initiate the server with config file
 func InitServer(configFilePath string) {
 
-	config := NewConfig(configFilePath)
+	config := config.NewConfig(configFilePath)
 
 	// New dispatcher without ClientBundle, ClientBundle must be initiated when server is running
-	d := &outbound.Dispatcher{
+	d := outbound.Dispatcher{
 		PrimaryDNS:         config.PrimaryDNS,
 		AlternativeDNS:     config.AlternativeDNS,
 		OnlyPrimaryDNS:     config.OnlyPrimaryDNS,
 		IPNetworkList:      config.IPNetworkList,
 		AclList:            config.AclList,
 		RedirectIPv6Record: config.RedirectIPv6Record,
+		Hosts:              config.Hosts,
+		Cache:              config.Cache,
 	}
 
 	s := &inbound.Server{
@@ -30,8 +33,6 @@ func InitServer(configFilePath string) {
 		Dispatcher:  d,
 		MinimumTTL:  config.MinimumTTL,
 		RejectQtype: config.RejectQtype,
-		Hosts:       config.Hosts,
-		Cache:       config.Cache,
 	}
 
 	s.Run()
