@@ -98,8 +98,8 @@ func (d *Dispatcher) ChooseActiveClientBundle() {
 	d.PrimaryClientBundle.ExchangeFromRemote(false, true)
 
 	if d.PrimaryClientBundle.ResponseMessage == nil || !common.HasAnswer(d.PrimaryClientBundle.ResponseMessage) {
-		//log.Debug("Primary DNS answer is empty, finally use alternative DNS")
-		//d.ActiveClientBundle = d.AlternativeClientBundle
+		log.Debug("Primary DNS answer is empty, finally use alternative DNS")
+		d.ActiveClientBundle = d.AlternativeClientBundle
 		return
 	}
 
