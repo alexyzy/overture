@@ -5,6 +5,9 @@
 package outbound
 
 import (
+	"time"
+
+	log "github.com/Sirupsen/logrus"
 	"github.com/miekg/dns"
 	"github.com/shadowsocks/overture/core/cache"
 	"github.com/shadowsocks/overture/core/common"
@@ -50,13 +53,16 @@ func (cb *ClientBundle) ExchangeFromRemote(isCache bool, isLog bool) {
 
 	var ec *Client
 
-	for i := 0; i < len(cb.ClientList); i++ {
-		if c := <-ch; c.ResponseMessage != nil {
-			ec = c
-			if common.HasAnswer(c.ResponseMessage) {
+	select {
+	case res := <-ch:
+		if res.ResponseMessage != nil {
+			ec = res
+			if common.HasAnswer(res.ResponseMessage) {
 				break
 			}
 		}
+	case <-time.After(5 * time.Second):
+		log.Debug("DNS query Timeout")
 	}
 
 	if ec != nil && ec.ResponseMessage != nil {
