@@ -34,7 +34,7 @@ type Config struct {
 	CacheSize          int
 	RejectQtype        []uint16
 
-	AclList       []*regexp.Regexp
+	AclList       []string
 	IPNetworkList []*net.IPNet
 	Hosts         *hosts.Hosts
 	Cache         *cache.Cache
@@ -99,7 +99,7 @@ func parseJson(path string) *Config {
 
 func (c *Config) getDomainList() {
 
-	var dl []*regexp.Regexp
+	var dl []string
 
 	f, err := os.Open(c.DomainFile)
 	if err != nil {
@@ -124,9 +124,9 @@ func (c *Config) getDomainList() {
 		case "[reject_all]", "[bypass_all]", "[accept_all]", "[proxy_all]":
 		default:
 			if inProxyList && len(line) > 0 && !strings.HasPrefix(line, "#") && !subnetTester.MatchString(line) {
-				re, err := regexp.Compile(line)
+				_, err := regexp.Compile(line)
 				if err == nil {
-					dl = append(dl, re)
+					dl = append(dl, line)
 				}
 			}
 		}

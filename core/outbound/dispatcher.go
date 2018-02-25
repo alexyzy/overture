@@ -3,11 +3,12 @@ package outbound
 import (
 	"net"
 	"regexp"
+	"runtime"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/miekg/dns"
-	"github.com/shadowsocks/overture/core/common"
 	"github.com/shadowsocks/overture/core/cache"
+	"github.com/shadowsocks/overture/core/common"
 	"github.com/shadowsocks/overture/core/hosts"
 )
 
@@ -23,7 +24,7 @@ type Dispatcher struct {
 	ActiveClientBundle      *ClientBundle
 
 	IPNetworkList      []*net.IPNet
-	AclList            []*regexp.Regexp
+	AclList            []string
 	RedirectIPv6Record bool
 
 	InboundIP string
@@ -78,14 +79,16 @@ func (d *Dispatcher) ExchangeForDomain() bool {
 	qn := d.PrimaryClientBundle.QuestionMessage.Question[0].Name[:len(d.PrimaryClientBundle.QuestionMessage.Question[0].Name)-1]
 
 	for _, re := range d.AclList {
-
-		if re.MatchString(qn) {
-			log.Debug("Matched: Custom domain " + qn + " with " + re.String())
+		matched, err := regexp.MatchString(re, qn)
+		if err == nil && matched {
+			log.Debug("Matched: Custom domain " + qn + " with " + re)
 			d.ActiveClientBundle = d.AlternativeClientBundle
 			log.Debug("Finally use alternative DNS")
 			return true
 		}
 	}
+
+	runtime.GC()
 
 	log.Debug("Domain match fail, try to use primary DNS")
 
