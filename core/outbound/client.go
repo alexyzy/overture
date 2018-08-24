@@ -8,10 +8,10 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/miekg/dns"
-	"github.com/shadowsocks/overture/core/utils"
 	"github.com/shadowsocks/overture/core/cache"
 	"github.com/shadowsocks/overture/core/common"
 	"github.com/shadowsocks/overture/core/hosts"
+	"github.com/shadowsocks/overture/core/utils"
 	"golang.org/x/net/proxy"
 )
 
@@ -67,8 +67,8 @@ func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 		}
 	} else {
 		var err error
-        d := net.Dialer{Control: utils.ControlOnConnSetup}
-        if conn, err = d.Dial(c.DNSUpstream.Protocol, c.DNSUpstream.Address); err != nil {
+		d := net.Dialer{Control: utils.ControlOnConnSetup}
+		if conn, err = d.Dial(c.DNSUpstream.Protocol, c.DNSUpstream.Address); err != nil {
 			log.Warn("Dial DNS upstream failed: ", err)
 			return
 		}

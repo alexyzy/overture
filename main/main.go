@@ -19,7 +19,7 @@ func main() {
 		logPath         string
 		isLogVerbose    bool
 		processorNumber int
-        vpnMode         bool
+		vpnMode         bool
 	)
 
 	flag.StringVar(&configPath, "c", "./config.json", "config file path")
