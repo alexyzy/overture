@@ -7,12 +7,13 @@ package core
 
 import (
 	"github.com/shadowsocks/overture/core/config"
+	"github.com/shadowsocks/overture/core/utils"
 	"github.com/shadowsocks/overture/core/inbound"
 	"github.com/shadowsocks/overture/core/outbound"
 )
 
 // Initiate the server with config file
-func InitServer(configFilePath string) {
+func InitServer(configFilePath string, vpnMode bool) {
 
 	config := config.NewConfig(configFilePath)
 
@@ -34,6 +35,8 @@ func InitServer(configFilePath string) {
 		MinimumTTL:  config.MinimumTTL,
 		RejectQtype: config.RejectQtype,
 	}
+
+    utils.VpnMode = vpnMode
 
 	s.Run()
 }
