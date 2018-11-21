@@ -4,6 +4,7 @@ package outbound
 import (
 	"math/rand"
 	"net"
+	"crypto/tls"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -63,6 +64,16 @@ func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 		conn, err = s.Dial(c.DNSUpstream.Protocol, c.DNSUpstream.Address)
 		if err != nil {
 			log.Warn("Dial DNS upstream with SOCKS5 proxy failed: ", err)
+			return
+		}
+	} else if (c.DNSUpstream.Protocol == "tcp-tls") {
+		var err error
+		conf := &tls.Config{
+			InsecureSkipVerify: true,
+		}
+		d := net.Dialer{Control: utils.ControlOnConnSetup}
+		if conn, err = tls.DialWithDialer(&d, "tcp", c.DNSUpstream.Address, conf); err != nil {
+			log.Warn("Dial DNS-over-TLS upstream failed: ", err)
 			return
 		}
 	} else {
