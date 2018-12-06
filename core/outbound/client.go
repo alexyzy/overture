@@ -74,12 +74,12 @@ func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 		}
 		s := strings.Split(c.DNSUpstream.Address, "@")
 		if len(s) == 2 {
-			var hostname, port string
-			if hostname, port, err = net.SplitHostPort(s[0]); err != nil {
-				log.Warn("DNS-over-TLS hostname:port@bootstrapAddress config failed: ", err)
+			var servername, port string
+			if servername, port, err = net.SplitHostPort(s[0]); err != nil {
+				log.Warn("DNS-over-TLS servername:port@serverAddress config failed: ", err)
 				return
 			}
-			conf.ServerName = hostname
+			conf.ServerName = servername
 			c.DNSUpstream.Address = s[1] + ":" + port
 		}
 		d := net.Dialer{Control: utils.ControlOnConnSetup}
