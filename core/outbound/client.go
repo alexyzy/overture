@@ -69,7 +69,7 @@ func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 	} else if (c.DNSUpstream.Protocol == "tcp-tls") {
 		var err error
 		conf := &tls.Config{
-			InsecureSkipVerify: true,
+			InsecureSkipVerify: false,
 		}
 		d := net.Dialer{Control: utils.ControlOnConnSetup}
 		if conn, err = tls.DialWithDialer(&d, "tcp", c.DNSUpstream.Address, conf); err != nil {
