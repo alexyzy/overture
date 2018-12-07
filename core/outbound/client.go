@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net"
 	"crypto/tls"
+	"strings"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -70,6 +71,16 @@ func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 		var err error
 		conf := &tls.Config{
 			InsecureSkipVerify: false,
+		}
+		s := strings.Split(c.DNSUpstream.Address, "@")
+		if len(s) == 2 {
+			var servername, port string
+			if servername, port, err = net.SplitHostPort(s[0]); err != nil {
+				log.Warn("DNS-over-TLS servername:port@serverAddress config failed: ", err)
+				return
+			}
+			conf.ServerName = servername
+			c.DNSUpstream.Address = s[1] + ":" + port
 		}
 		d := net.Dialer{Control: utils.ControlOnConnSetup}
 		if conn, err = tls.DialWithDialer(&d, "tcp", c.DNSUpstream.Address, conf); err != nil {
