@@ -41,10 +41,16 @@ func (c *Client) getEDNSClientSubnetIP() {
 
 	switch c.DNSUpstream.EDNSClientSubnet.Policy {
 	case "auto":
-		if !common.IsIPMatchList(net.ParseIP(c.InboundIP), common.ReservedIPNetworkList, false) {
+		if !common.IsIPMatchList(net.ParseIP(c.InboundIP), common.ReservedIPNetworkList, false, "") {
 			c.EDNSClientSubnetIP = c.InboundIP
 		} else {
 			c.EDNSClientSubnetIP = c.DNSUpstream.EDNSClientSubnet.ExternalIP
+		}
+	case "manual":
+		if c.DNSUpstream.EDNSClientSubnet.ExternalIP != "" &&
+			!common.IsIPMatchList(net.ParseIP(c.DNSUpstream.EDNSClientSubnet.ExternalIP), common.ReservedIPNetworkList, false, "") {
+			c.EDNSClientSubnetIP = c.DNSUpstream.EDNSClientSubnet.ExternalIP
+			return
 		}
 	case "disable":
 	}
@@ -52,7 +58,7 @@ func (c *Client) getEDNSClientSubnetIP() {
 
 func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 
-	common.SetEDNSClientSubnet(c.QuestionMessage, c.EDNSClientSubnetIP)
+	common.SetEDNSClientSubnet(c.QuestionMessage, c.EDNSClientSubnetIP, c.DNSUpstream.EDNSClientSubnet.NoCookie)
 	c.EDNSClientSubnetIP = common.GetEDNSClientSubnetIP(c.QuestionMessage)
 
 	var conn net.Conn
@@ -112,8 +118,8 @@ func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 	temp, err := dc.ReadMsg()
 
 	if err != nil {
-        log.Warn(c.DNSUpstream.Name + " Fail: Maybe this server does not support EDNS Client Subnet")
-        return
+		log.Warn(c.DNSUpstream.Name+" Fail: ", err)
+		return
 	}
 	if temp == nil {
 		log.Debug(c.DNSUpstream.Name + " Fail: Response message is nil, maybe timeout, please check your query or dns configuration")
