@@ -14,30 +14,35 @@ import (
 	"strconv"
 	"strings"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/shadowsocks/overture/core/cache"
 	"github.com/shadowsocks/overture/core/common"
 	"github.com/shadowsocks/overture/core/hosts"
 )
 
 type Config struct {
-	BindAddress        string `json:"BindAddress"`
-	PrimaryDNS         []*common.DNSUpstream
-	AlternativeDNS     []*common.DNSUpstream
-	OnlyPrimaryDNS     bool
-	RedirectIPv6Record bool
-	IPNetworkFile      string
-	DomainFile         string
-	DomainBase64Decode bool
-	HostsFile          string
-	MinimumTTL         int
-	CacheSize          int
-	RejectQtype        []uint16
+	BindAddress           string `json:"BindAddress"`
+	HTTPAddress           string `json:"HTTPAddress"`
+	PrimaryDNS            []*common.DNSUpstream
+	AlternativeDNS        []*common.DNSUpstream
+	OnlyPrimaryDNS        bool
+	IPv6UseAlternativeDNS bool
+	IPNetworkFile         struct {
+		Primary     string
+		Alternative string
+	}
+	AclFile     string
+	HostsFile   string
+	MinimumTTL  int
+	CacheSize   int
+	RejectQtype []uint16
 
-	AclList       []string
-	IPNetworkList []*net.IPNet
-	Hosts         *hosts.Hosts
-	Cache         *cache.Cache
+	DomainPrimaryList        []string
+	DomainAlternativeList    []string
+	IPNetworkPrimaryList     []*net.IPNet
+	IPNetworkAlternativeList []*net.IPNet
+	Hosts                    *hosts.Hosts
+	Cache                    *cache.Cache
 }
 
 // New config with json file and do some other initiate works
@@ -45,8 +50,9 @@ func NewConfig(configFile string) *Config {
 
 	config := parseJson(configFile)
 
-	config.getIPNetworkList()
-	config.getDomainList()
+	config.getAclList()
+	config.IPNetworkPrimaryList = getIPNetworkList(config.IPNetworkFile.Primary)
+	config.IPNetworkAlternativeList = getIPNetworkList(config.IPNetworkFile.Alternative)
 
 	if config.MinimumTTL > 0 {
 		log.Info("Minimum TTL is " + strconv.Itoa(config.MinimumTTL))
@@ -97,13 +103,10 @@ func parseJson(path string) *Config {
 	return j
 }
 
-func (c *Config) getDomainList() {
-
-	var dl []string
-
-	f, err := os.Open(c.DomainFile)
+func (c *Config) getAclList() {
+	f, err := os.Open(c.AclFile)
 	if err != nil {
-		log.Error("Open Custom domain file failed: ", err)
+		log.Error("Open ACL file failed: ", err)
 		return
 	}
 	defer f.Close()
@@ -117,37 +120,35 @@ func (c *Config) getDomainList() {
 	for s.Scan() {
 		line := s.Text()
 		switch line {
-		case "[outbound_block_list]", "[black_list]", "[bypass_list]":
+		case "[outbound_block_list]":
+			panic("outbound_block_list unsupported")
+		case "[black_list]", "[bypass_list]":
 			inProxyList = false
 		case "[white_list]", "[proxy_list]":
 			inProxyList = true
 		case "[reject_all]", "[bypass_all]", "[accept_all]", "[proxy_all]":
 		default:
-			if inProxyList && len(line) > 0 && !strings.HasPrefix(line, "#") && !subnetTester.MatchString(line) {
+			if len(line) > 0 && !strings.HasPrefix(line, "#") && !subnetTester.MatchString(line) {
 				_, err := regexp.Compile(line)
 				if err == nil {
-					dl = append(dl, line)
+					if inProxyList {
+						c.DomainAlternativeList = append(c.DomainAlternativeList, line)
+					} else {
+						c.DomainPrimaryList = append(c.DomainPrimaryList, line)
+					}
 				}
 			}
 		}
 	}
-
-	if len(dl) > 0 {
-		log.Info("Load domain file successful")
-	} else {
-		log.Warn("There is no element in domain file")
-	}
-
-	c.AclList = dl
 }
 
-func (c *Config) getIPNetworkList() {
+func getIPNetworkList(file string) []*net.IPNet {
 
 	ipnl := make([]*net.IPNet, 0)
-	f, err := os.Open(c.IPNetworkFile)
+	f, err := os.Open(file)
 	if err != nil {
 		log.Error("Open IP network file failed: ", err)
-		return
+		return nil
 	}
 	defer f.Close()
 	s := bufio.NewScanner(f)
@@ -158,11 +159,12 @@ func (c *Config) getIPNetworkList() {
 		}
 		ipnl = append(ipnl, ip_net)
 	}
+
 	if len(ipnl) > 0 {
-		log.Info("Load IP network file successful")
+		log.Info("Load " + file + " successful")
 	} else {
-		log.Warn("There is no element in IP network file")
+		log.Warn("There is no element in " + file)
 	}
 
-	c.IPNetworkList = ipnl
+	return ipnl
 }
