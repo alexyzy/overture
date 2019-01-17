@@ -75,9 +75,7 @@ func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 		}
 	} else if (c.DNSUpstream.Protocol == "tcp-tls") {
 		var err error
-		conf := &tls.Config{
-			InsecureSkipVerify: false,
-		}
+		var conf tls.Config
 		s := strings.Split(c.DNSUpstream.Address, "@")
 		if len(s) == 2 {
 			var servername, port string
@@ -89,7 +87,7 @@ func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 			c.DNSUpstream.Address = s[1] + ":" + port
 		}
 		d := net.Dialer{Control: utils.ControlOnConnSetup}
-		if conn, err = tls.DialWithDialer(&d, "tcp", c.DNSUpstream.Address, conf); err != nil {
+		if conn, err = tls.DialWithDialer(&d, "tcp", c.DNSUpstream.Address, &conf); err != nil {
 			log.Warn("Dial DNS-over-TLS upstream failed: ", err)
 			return
 		}
