@@ -4,9 +4,11 @@ package outbound
 import (
 	"math/rand"
 	"net"
+	"crypto/tls"
+	"strings"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/miekg/dns"
 	"github.com/shadowsocks/overture/core/cache"
 	"github.com/shadowsocks/overture/core/common"
@@ -39,10 +41,16 @@ func (c *Client) getEDNSClientSubnetIP() {
 
 	switch c.DNSUpstream.EDNSClientSubnet.Policy {
 	case "auto":
-		if !common.IsIPMatchList(net.ParseIP(c.InboundIP), common.ReservedIPNetworkList, false) {
+		if !common.IsIPMatchList(net.ParseIP(c.InboundIP), common.ReservedIPNetworkList, false, "") {
 			c.EDNSClientSubnetIP = c.InboundIP
 		} else {
 			c.EDNSClientSubnetIP = c.DNSUpstream.EDNSClientSubnet.ExternalIP
+		}
+	case "manual":
+		if c.DNSUpstream.EDNSClientSubnet.ExternalIP != "" &&
+			!common.IsIPMatchList(net.ParseIP(c.DNSUpstream.EDNSClientSubnet.ExternalIP), common.ReservedIPNetworkList, false, "") {
+			c.EDNSClientSubnetIP = c.DNSUpstream.EDNSClientSubnet.ExternalIP
+			return
 		}
 	case "disable":
 	}
@@ -50,7 +58,7 @@ func (c *Client) getEDNSClientSubnetIP() {
 
 func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 
-	common.SetEDNSClientSubnet(c.QuestionMessage, c.EDNSClientSubnetIP)
+	common.SetEDNSClientSubnet(c.QuestionMessage, c.EDNSClientSubnetIP, c.DNSUpstream.EDNSClientSubnet.NoCookie)
 	c.EDNSClientSubnetIP = common.GetEDNSClientSubnetIP(c.QuestionMessage)
 
 	var conn net.Conn
@@ -63,6 +71,24 @@ func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 		conn, err = s.Dial(c.DNSUpstream.Protocol, c.DNSUpstream.Address)
 		if err != nil {
 			log.Warn("Dial DNS upstream with SOCKS5 proxy failed: ", err)
+			return
+		}
+	} else if (c.DNSUpstream.Protocol == "tcp-tls") {
+		var err error
+		var conf tls.Config
+		s := strings.Split(c.DNSUpstream.Address, "@")
+		if len(s) == 2 {
+			var servername, port string
+			if servername, port, err = net.SplitHostPort(s[0]); err != nil {
+				log.Warn("DNS-over-TLS servername:port@serverAddress config failed: ", err)
+				return
+			}
+			conf.ServerName = servername
+			c.DNSUpstream.Address = s[1] + ":" + port
+		}
+		d := net.Dialer{Control: utils.ControlOnConnSetup}
+		if conn, err = tls.DialWithDialer(&d, "tcp", c.DNSUpstream.Address, &conf); err != nil {
+			log.Warn("Dial DNS-over-TLS upstream failed: ", err)
 			return
 		}
 	} else {
@@ -90,10 +116,8 @@ func (c *Client) ExchangeFromRemote(isCache bool, isLog bool) {
 	temp, err := dc.ReadMsg()
 
 	if err != nil {
-		if err == dns.ErrTruncated {
-			log.Warn(c.DNSUpstream.Name + " Fail: Maybe this server does not support EDNS Client Subnet")
-			return
-		}
+		log.Warn(c.DNSUpstream.Name+" Fail: ", err)
+		return
 	}
 	if temp == nil {
 		log.Debug(c.DNSUpstream.Name + " Fail: Response message is nil, maybe timeout, please check your query or dns configuration")

@@ -28,7 +28,7 @@ import "C"
 
 import (
 	"bufio"
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"os"
 	"unsafe"
 )
